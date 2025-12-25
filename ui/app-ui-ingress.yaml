@@ -1,0 +1,87 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ui
+  namespace: frontend
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: "letsencrypt-prod" # Indicates which certificate issuer is used.
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    nginx.ingress.kubernetes.io/use-gzip: "true"
+    nginx.ingress.kubernetes.io/enable-brotli: "true"
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/enable-owasp-modsecurity-crs: "true"
+    nginx.ingress.kubernetes.io/modsecurity-transaction-id: "$request_id"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Xss-Protection: 1; mode=block";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Cross-Origin-Opener-Policy: same-origin";
+      more_set_headers "Cross-Origin-Embedder-Policy: require-corp";
+      more_set_headers "Cross-Origin-Resource-Policy: cross-origin";
+    # nginx.ingress.kubernetes.io/modsecurity-snippet: |
+    #   SecRuleEngine On
+    #   SecRequestBodyAccess On
+    #   SecAuditLogParts ABIJDEFHZ
+    #   SecAuditEngine RelevantOnly
+    #   SecAuditLogType Serial
+    #   SecAuditLog /dev/stdout
+    #   SecRule REQUEST_HEADERS:User-Agent \"fern-scanner\" \"log,deny,id:107,status:403,msg:\'Fern Scanner Identified\'\"
+    #   Include /etc/nginx/owasp-modsecurity-crs/crs-setup.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-901-INITIALIZATION.conf
+    #   #Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-903.9001-DRUPAL-EXCLUSION-RULES.conf
+    #   #Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-903.9002-WORDPRESS-EXCLUSION-RULES.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-905-COMMON-EXCEPTIONS.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-910-IP-REPUTATION.conf
+    #   # Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-911-METHOD-ENFORCEMENT.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-912-DOS-PROTECTION.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-913-SCANNER-DETECTION.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-921-PROTOCOL-ATTACK.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-931-APPLICATION-ATTACK-RFI.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.conf
+    #   #Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-933-APPLICATION-ATTACK-PHP.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-934-APPLICATION-ATTACK-NODEJS.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-943-APPLICATION-ATTACK-SESSION-FIXATION.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-944-APPLICATION-ATTACK-JAVA.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/REQUEST-949-BLOCKING-EVALUATION.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/RESPONSE-950-DATA-LEAKAGES.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/RESPONSE-951-DATA-LEAKAGES-SQL.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/RESPONSE-952-DATA-LEAKAGES-JAVA.conf
+    #   #Include /etc/nginx/owasp-modsecurity-crs/rules/RESPONSE-953-DATA-LEAKAGES-PHP.conf
+    #   #Include /etc/nginx/owasp-modsecurity-crs/rules/RESPONSE-954-DATA-LEAKAGES-IIS.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/RESPONSE-959-BLOCKING-EVALUATION.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/RESPONSE-980-CORRELATION.conf
+    #   Include /etc/nginx/owasp-modsecurity-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
+    # Imported from Include /etc/nginx/owasp-modsecurity-crs/nginx-modsecurity.conf
+    nginx.ingress.kubernetes.io/limit-connection: "60"
+    nginx.ingress.kubernetes.io/limit-rpm: "600"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true" #Allow cors for pages containing credentials
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.stg.4t5techlabs.com"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "PUT, GET, POST, OPTIONS, DELETE, PATCH"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Content-Type, Authorization, Referer, Origin, X-Requested-With, Accept"
+    # nginx.ingress.kubernetes.io/proxy-connect-timeout: "30s"
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "30s"
+    nginx.ingress.kubernetes.io/client-max-body-size: "32m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true" # Redirects HTTP to HTTPS for all requests
+spec:
+    tls:
+      - hosts:
+          - app.stg.4t5techlabs.com
+        secretName: app-ui-tls
+    rules:
+      - host: app.stg.4t5techlabs.com
+        http:
+          paths:
+            - path: /
+              pathType: Prefix
+              backend:
+                service:
+                  name: app-ui
+                  port:
+                    number: 8080

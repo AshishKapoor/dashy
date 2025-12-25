@@ -1,0 +1,19 @@
+name: Docker Image Build Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+
+  build:
+
+    runs-on: build-only
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v3
+        name: Checking out code
+
+      - name: Build the Docker image
+        run: eval `ssh-agent -s` && ssh-add ~/.ssh/id_rsa && DOCKER_BUILDKIT=1 docker compose build app-ui-deploy

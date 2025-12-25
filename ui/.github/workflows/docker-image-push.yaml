@@ -1,0 +1,31 @@
+name: Docker Image Build & Push
+
+on: workflow_dispatch
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+jobs:
+
+  build-push:
+
+    runs-on: deploy-stg
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v3
+        name: Checking out code
+
+      - name: Build the Docker image
+        run: eval `ssh-agent -s` && ssh-add ~/.ssh/id_rsa && DOCKER_BUILDKIT=1 docker compose build app-ui-deploy
+
+      - name: Push the Docker image
+        run: docker compose push app-ui-deploy
+
+      - name: Delete previous deployment
+        run: kubectl delete --ignore-not-found=true -f app-ui-deployment.yaml
+
+      - name: Deploy app ui
+        run: kubectl apply -f app-ui-deployment.yaml
