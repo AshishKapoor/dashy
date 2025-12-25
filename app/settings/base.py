@@ -14,15 +14,18 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 DEBUG = os.getenv("DEBUG")
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
 
+# Custom user model
+AUTH_USER_MODEL = "accounts.User"
+
 INSTALLED_APPS = [
-    'unfold',
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    'core',
+    'app.accounts',
+    'app.bi',
     'django_extensions',
     'rest_framework',
     'drf_spectacular',
@@ -110,11 +113,3 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-UNFOLD = {
-    "SITE_TITLE": "Default Admin",
-    "SITE_HEADER": "Default Admin Panel",
-    "SITE_URL": "/",
-    "SHOW_COUNTS": True,
-    "SHOW_HISTORY": True,
-}
