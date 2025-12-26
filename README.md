@@ -1,145 +1,141 @@
-# 🚀 Advanced Django Blueprint
+# Dashy
 
-A modern Django project blueprint designed with developer productivity and best practices in mind.
+Dashy is a Django 5 + React 19 stack for organization-scoped BI with JWT auth, IoT time-series ingestion (TimescaleDB), and a Vite-powered UI that uses a generated OpenAPI client.
 
-## 🧩 Features
+## Project layout
 
-- ✅ Django 5.x with modular settings
-- ✅ PostgreSQL as default database
-- ✅ DRF (Django REST Framework) for API development
-- ✅ OpenAPI documentation using drf-spectacular
-- ✅ Django Unfold for a beautiful admin UI
-- ✅ Psycopg 3 integration (PostgreSQL adapter)
-- ✅ Ruff for linting and formatting
-- ✅ Pre-commit hook to enforce code style
-- ✅ Task automation via Makefile
-- ✅ Docker support (uv-based image, optimized build)
-- ✅ VSCode dev container support
+- Backend: Django API in [api/app](api/app) with apps `accounts` and `bi`; settings load `.env.dev` by default in [api/app/settings/base.py](api/app/settings/base.py).
+- Auth: SimpleJWT with custom claims; token routes are exposed in [api/app/urls.py](api/app/urls.py) at `/api/auth/token`, `/api/auth/token/refresh`, and `/api/auth/token/verify`.
+- Data model: Organizations, Roles, Memberships, Workspaces, Dashboards, Indicators, and IoT measurements; IoT hypertable setup lives in [api/app/bi/migrations/0002_enable_timescaledb_and_hypertable.py](api/app/bi/migrations/0002_enable_timescaledb_and_hypertable.py).
+- API docs: drf-spectacular schema at `/api/schema/` and Swagger UI at `/api/docs/` via [api/app/urls.py](api/app/urls.py).
+- Frontend: Vite/React app in [ui/app](ui/app) (alias `@` -> `ui/app`), using TanStack Query and the generated client from [ui/schema/dashy.yaml](ui/schema/dashy.yaml).
 
----
+## Prerequisites
 
-## 🛠 Getting Started
+- Docker and Docker Compose (recommended path).
+- If running locally: Python 3.12+, [uv](https://docs.astral.sh/uv/) for dependency management, Node 20+ with pnpm.
 
-### Option 1: Using Docker
+## Quick start (Docker)
 
-1. Copy and rename `.env.example` to `.env.dev`
-2. Run Docker:
+1. Copy env template: `cp api/.env.example api/.env.dev` (adjust secrets as needed).
+2. Build images: `docker compose build`.
+3. Run migrations: `docker compose run migrate`.
+4. Start stack: `docker compose up`.
 
-```bash
-docker compose build
-docker compose run migrate
-docker compose up
-```
+Services
 
-Django will be available at: http://localhost:8000
+- API: http://localhost:8000/
+- UI: http://localhost:5173/
 
-### Option 2: Using Makefile
+## Local development (without Docker)
 
-1. Copy and rename `.env.example` to `.env.dev`
-2. Sync and install dependencies:
+### Backend
 
-```bash
-make install
-```
+1. `cd api`
+2. `cp .env.example .env.dev` and ensure `DATABASE_HOST=localhost` if using a local Postgres.
+3. Install deps: `make install`
+4. Migrate: `make migrate`
+5. Run dev server: `make run` (uses `app.settings.dev`).
 
-3. Run migrations and dev server:
+### Frontend
 
-```bash
-make migrate
-make run
-```
+1. `cd ui`
+2. Install deps: `pnpm install`
+3. Set `VITE_DEV_MODE=true` (or define `VITE_DATA_SERVICE_BASE_URL`) in a `.env.local` file if needed.
+4. Run dev server: `pnpm dev` (defaults to http://localhost:5173/).
 
----
+## Authentication
 
-## 🧪 Development
+- Obtain tokens via `POST /api/auth/token` with `username` and `password`.
+- Refresh via `POST /api/auth/token/refresh`.
+- Tokens are stored in `localStorage` keys `access_token` and `refresh_token`; the Axios mutator injects the bearer token and redirects to `/login` on 401.
 
-### Available Makefile Commands
+## API docs and client generation
 
-⚠️ Warning
+- Swagger UI: http://localhost:8000/api/docs/
+- Raw schema: http://localhost:8000/api/schema/
+- Regenerate the React OpenAPI hooks: from `ui`, run `pnpm generate:client` (uses [ui/schema/dashy.yaml](ui/schema/dashy.yaml)).
 
-Makefile commands only work on your local development machine, when DATABASE_HOST is set to localhost.
-For development inside Docker, execute commands using:
-docker compose exec web {your command}
+## IoT ingestion and querying
 
-```bash
-make install        # Sync dependencies with uv
-make run            # Start development server
-make migrate        # Apply database migrations
-make shell          # Open Django shell_plus
-make test           # Run tests
-make lint           # Run Ruff linter
-make format         # Format code using Ruff
-make clean          # Delete cache and temporary files
-make superuser name # Make super user
-make app name={app_name} # Create app
-make command app={app_name} command={command_name} # Create command with app name and command name
-```
+- List/filter measurements: `GET /api/bi/iot/?device_id=...&metric=...` (scoped to the requester organization).
+- Bulk ingest: `POST /api/bi/iot/ingest/`
+  - JSON object format:
+    ```json
+    {
+      "device_id": "dev-1",
+      "metric": "temperature",
+      "rows": [
+        {
+          "recorded_at": "2025-01-01T00:00:00Z",
+          "value": 23.1,
+          "tags": { "room": "A" }
+        }
+      ]
+    }
+    ```
+  - JSON array (OpenAQ-style) is also supported.
+  - CSV upload accepts columns: `device_id, metric, recorded_at, value, tags` (tags as JSON string).
+- Read-only SQL helper: `POST /api/bi/viz/query/` executes SELECT-only queries with an injected organization filter; schema helper lives at `GET /api/bi/viz/schema/`.
 
----
-
-## ✅ Linting
-
-We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
-
-Configure rules inside `pyproject.toml` under `[tool.ruff]`, `[tool.ruff.lint]`, and `[tool.ruff.format]`.
-
-To run manually:
+### Example cURL (update credentials as needed)
 
 ```bash
-make lint
-make format
+API_BASE=http://localhost:8000
+USERNAME=admin
+PASSWORD=admin123
+
+# 1) Obtain JWT pair
+curl -X POST "$API_BASE/api/auth/token/" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "'$USERNAME'", "password": "'$PASSWORD'"}'
+
+# 2) Refresh access token
+REFRESH="<paste refresh token>"
+curl -X POST "$API_BASE/api/auth/token/refresh/" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh": "'$REFRESH'"}'
+
+# 3) Ingest IoT measurements (JSON object format)
+ACCESS="<paste access token>"
+curl -X POST "$API_BASE/api/bi/iot/ingest/" \
+  -H "Authorization: Bearer $ACCESS" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_id": "dev-1",
+    "metric": "temperature",
+    "rows": [
+      {"recorded_at": "2025-01-01T00:00:00Z", "value": 23.1, "tags": {"room": "A"}},
+      {"recorded_at": "2025-01-01T01:00:00Z", "value": 22.7, "tags": {"room": "A"}}
+    ]
+  }'
+
+# 4) Ingest IoT measurements (CSV upload)
+cat > sample.csv <<'CSV'
+device_id,metric,recorded_at,value,tags
+dev-1,temperature,2025-01-01T02:00:00Z,22.5,"{\"room\":\"A\"}"
+dev-1,temperature,2025-01-01T03:00:00Z,22.3,"{\"room\":\"A\"}"
+CSV
+
+curl -X POST "$API_BASE/api/bi/iot/ingest/" \
+  -H "Authorization: Bearer $ACCESS" \
+  -F "file=@sample.csv"
 ```
 
----
+## Running tests and linting
 
-## 🔄 Pre-commit Hook
+- Backend: from `api` run `make test`, `make lint`, `make format`.
+- Frontend: from `ui` run `pnpm lint`; Playwright e2e via `pnpm test` (or `pnpm test:ui`).
 
-Set up the pre-commit hook for consistent code quality:
+## Useful Make targets (backend)
 
-```bash
-pre-commit install
-```
+- `make install` syncs dependencies with uv.
+- `make migrate` applies migrations.
+- `make run` starts the dev server.
+- `make shell` opens `shell_plus`.
+- `make app name=foo` scaffolds a Django app.
 
-It will run Ruff check, formatting and GitLeaks inspection before every commit.
+## Notes
 
----
-
-## 📦 Docker
-
-The Dockerfile is based on `ghcr.io/astral-sh/uv` with pre-installed uv support. It:
-
-- Installs dependencies using uv
-- Waits for PostgreSQL using `wait-for-it.sh`
-- Runs migrations
-- Starts Django development server
-
-Example `docker-compose.yml` connects the Django app to a PostgreSQL container.
-
----
-
-## ✨ Admin UI
-
-Admin is powered by [Django Unfold](https://github.com/unfoldadmin/unfold):
-
-```python
-from unfold.admin import ModelAdmin
-
-@admin.register(MyModel)
-class MyModelAdmin(ModelAdmin):
-    pass
-```
-
----
-
-## 📚 API Docs
-
-OpenAPI documentation is powered by `drf-spectacular`:
-
-- `/api/schema/` – schema endpoint
-- `/api/docs/` – Swagger UI
-
----
-
-## 👤 Author
-
-Made with ❤️ by [Saba Abzhandadze](https://github.com/saba-ab)
+- Default settings load `.env.dev`; production should point `ENV_FILE` to `.env.prod` in [api/app/settings/base.py](api/app/settings/base.py).
+- All API endpoints require authentication by default; ensure the user is linked to an organization to see BI/IoT data.
