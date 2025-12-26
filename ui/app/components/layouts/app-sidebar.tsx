@@ -11,6 +11,7 @@ import {
   Briefcase,
   Activity,
   Database,
+  LineChart,
 } from "lucide-react";
 import {
   Sidebar,
@@ -86,6 +87,11 @@ const biNavItems = [
     title: "Data Management",
     icon: Database,
     href: "/data-management",
+  },
+  {
+    title: "Data Viz",
+    icon: LineChart,
+    href: "/data-viz",
   },
 ];
 

@@ -17,6 +17,7 @@ import { WorkspacesPage } from "@/pages/bi/workspaces";
 import { DashboardsPage } from "@/pages/bi/dashboards";
 import { IndicatorsPage } from "@/pages/bi/indicators";
 import { DataManagementPage } from "@/pages/bi/data-management";
+import { DataVizPage } from "@/pages/bi/data-viz";
 
 import "@/assets/styles/globals.css";
 
@@ -59,6 +60,7 @@ function App() {
                   path="data-management"
                   element={<DataManagementPage />}
                 />
+                <Route path="data-viz" element={<DataVizPage />} />
               </Route>
 
               {/* Auth Routes */}
