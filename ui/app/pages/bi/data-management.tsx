@@ -169,8 +169,9 @@ export function DataManagementPage() {
       onSuccess: async () => {
         toast.success("File ingested successfully");
         // Invalidate all IoT queries to refresh data regardless of filters
+        // Use the correct query key prefix from generated client
         await queryClient.invalidateQueries({
-          queryKey: ["bi", "iot", "list"],
+          queryKey: [`/api/bi/iot/`],
         });
         // Explicitly refetch the current view
         await refetch();
