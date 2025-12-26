@@ -10,6 +10,7 @@ import {
   BarChart3,
   Briefcase,
   Activity,
+  Database,
 } from "lucide-react";
 import {
   Sidebar,
@@ -80,6 +81,11 @@ const biNavItems = [
     title: "Indicators",
     icon: Activity,
     href: "/indicators",
+  },
+  {
+    title: "Data Management",
+    icon: Database,
+    href: "/data-management",
   },
 ];
 

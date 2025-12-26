@@ -16,6 +16,7 @@ import { RolesPage } from "@/pages/accounts/roles";
 import { WorkspacesPage } from "@/pages/bi/workspaces";
 import { DashboardsPage } from "@/pages/bi/dashboards";
 import { IndicatorsPage } from "@/pages/bi/indicators";
+import { DataManagementPage } from "@/pages/bi/data-management";
 
 import "@/assets/styles/globals.css";
 
@@ -54,6 +55,10 @@ function App() {
                 <Route path="workspaces" element={<WorkspacesPage />} />
                 <Route path="dashboards" element={<DashboardsPage />} />
                 <Route path="indicators" element={<IndicatorsPage />} />
+                <Route
+                  path="data-management"
+                  element={<DataManagementPage />}
+                />
               </Route>
 
               {/* Auth Routes */}

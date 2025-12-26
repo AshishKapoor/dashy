@@ -6,6 +6,7 @@ from .models import (
     Indicator,
     IndicatorValue,
     Workspace,
+    IoTMeasurement,
 )
 
 class WorkspaceSerializer(serializers.ModelSerializer):
@@ -35,4 +36,10 @@ class IndicatorValueSerializer(serializers.ModelSerializer):
 class DashboardIndicatorSerializer(serializers.ModelSerializer):
     class Meta:
         model = DashboardIndicator
+        fields = "__all__"
+
+
+class IoTMeasurementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IoTMeasurement
         fields = "__all__"

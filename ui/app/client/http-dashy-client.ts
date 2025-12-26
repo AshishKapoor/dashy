@@ -9,15 +9,17 @@ export const DATA_SERVICE_BASE_URL =
 
 export const AXIOS_INSTANCE = Axios.create({
   baseURL: DATA_SERVICE_BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
 AXIOS_INSTANCE.interceptors.request.use(async function (config) {
   const token = getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Let Axios set the appropriate Content-Type.
+  // If sending FormData, ensure we don't force application/json.
+  if (config.data instanceof FormData && config.headers) {
+    delete (config.headers as any)["Content-Type"];
   }
   return config;
 });
