@@ -21,7 +21,7 @@ COPY . .
 EXPOSE 5173
 
 # Start the dev server
-CMD [ "pnpm", "dev", "--host" ]
+CMD [ "sh", "-c", "pnpm install --frozen-lockfile && pnpm dev --host" ]
 
 # Build Stage
 FROM node:22-alpine3.21 AS build

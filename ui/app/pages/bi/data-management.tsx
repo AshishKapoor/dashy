@@ -14,6 +14,7 @@ import {
   CalendarClock,
   Braces,
   Type,
+  Loader2,
 } from "lucide-react";
 import {
   ColumnDef,
@@ -139,7 +140,7 @@ export function DataManagementPage() {
     overscan: 10,
   });
 
-  const { data, isLoading, refetch } = useBiIotList(
+  const { data, isLoading, isFetching, refetch } = useBiIotList(
     {
       device_id: deviceId || undefined,
       metric: metric || undefined,
@@ -263,13 +264,20 @@ export function DataManagementPage() {
                   type="file"
                   accept=".csv,application/json"
                   onChange={(e) => handleUpload(e.target.files?.[0] || null)}
+                  disabled={ingestMutation.isPending}
                 />
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={() => refetch()}
+                  disabled={isFetching || ingestMutation.isPending}
                 >
-                  <Upload className="mr-2 h-4 w-4" /> Load
+                  {isFetching ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Load
                 </Button>
               </div>
             </div>
@@ -282,6 +290,28 @@ export function DataManagementPage() {
           <CardTitle>Dataset Preview</CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Top progress bar during upload or refetch */}
+          {(ingestMutation.isPending || isFetching) && (
+            <div className="absolute top-0 left-0 right-0 h-1">
+              <div className="h-full bg-primary/20" />
+              <div className="absolute inset-0">
+                <div className="h-full w-1/3 bg-primary/80 animate-pulse" />
+              </div>
+            </div>
+          )}
+          {/* Overlay loader during upload or refetch */}
+          {(ingestMutation.isPending || isFetching) && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-md border bg-card">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">
+                  {ingestMutation.isPending
+                    ? "Uploading and refreshing dataset..."
+                    : "Refreshing dataset..."}
+                </span>
+              </div>
+            </div>
+          )}
           {isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-10 w-full" />
@@ -291,7 +321,7 @@ export function DataManagementPage() {
           ) : (
             <div
               ref={tableContainerRef}
-              className="rounded-md border h-[500px] overflow-auto"
+              className="relative rounded-md border h-[500px] overflow-auto"
             >
               <div
                 style={{
