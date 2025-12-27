@@ -877,7 +877,47 @@ paths:
       operationId: bi_iot_ingest_create
       tags:
         - bi
-      description: Bulk ingest IoT data via JSON or CSV upload.
+      description: |
+        Async ingestion endpoint - creates an IngestionJob and processes in background.
+        Accepts file upload (JSON or CSV) and returns immediately with job ID.
+        Poll the job status via /api/bi/ingestion-jobs/{id}/ to track progress.
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: JSON or CSV file to ingest
+              required:
+                - file
+      security:
+        - cookieAuth: []
+        - basicAuth: []
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionJob"
+          description: "Ingestion job created and queued for processing"
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionError"
+          description: "Bad request"
+  /api/bi/iot/ingest-sync/:
+    post:
+      operationId: bi_iot_ingest_sync_create
+      tags:
+        - bi
+      description: |
+        Synchronous ingestion for small datasets (backward compatible).
+        Accepts either JSON body or file upload.
+        Use /ingest/ for large files - they will be processed in background.
       requestBody:
         content:
           application/json:
@@ -919,6 +959,48 @@ paths:
                 properties:
                   created:
                     type: integer
+          description: ""
+  /api/bi/ingestion-jobs/:
+    get:
+      operationId: bi_ingestion_jobs_list
+      tags:
+        - bi
+      description: List all ingestion jobs for the user's organization.
+      security:
+        - cookieAuth: []
+        - basicAuth: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IngestionJob"
+          description: ""
+  /api/bi/ingestion-jobs/{id}/:
+    get:
+      operationId: bi_ingestion_jobs_retrieve
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          description: A unique UUID identifying this ingestion job.
+          required: true
+      tags:
+        - bi
+      description: Get details of a specific ingestion job including progress.
+      security:
+        - cookieAuth: []
+        - basicAuth: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionJob"
           description: ""
   /api/bi/workspaces/:
     get:
@@ -1189,6 +1271,76 @@ components:
         - device_id
         - metric
         - recorded_at
+    IngestionJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        organization:
+          type: integer
+          readOnly: true
+        created_by:
+          type: integer
+          nullable: true
+          readOnly: true
+        source_type:
+          type: string
+          enum: [json, csv, api]
+        file_name:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+          readOnly: true
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          readOnly: true
+        total_rows:
+          type: integer
+          readOnly: true
+        processed_rows:
+          type: integer
+          readOnly: true
+        failed_rows:
+          type: integer
+          readOnly: true
+        error_message:
+          type: string
+          nullable: true
+          readOnly: true
+        logs:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+      required:
+        - id
+        - source_type
+        - status
+    IngestionError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
     Membership:
       type: object
       properties:

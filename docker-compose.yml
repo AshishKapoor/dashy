@@ -2,7 +2,7 @@ services:
   api:
     build:
       context: ./api
-    command: sh -c "make run"
+    command: ["uv", "run", "manage.py", "runserver", "0.0.0.0:8000"]
     volumes:
       - ./api:/app
     ports:
@@ -13,6 +13,23 @@ services:
       - DJANGO_SETTINGS_MODULE=app.settings.dev
     depends_on:
       - db
+      - redis
+    networks:
+      - dashy_network
+
+  worker:
+    build:
+      context: ./api
+    command: ["uv", "run", "celery", "-A", "app", "worker", "-l", "info"]
+    volumes:
+      - ./api:/app
+    env_file:
+      - ./api/.env.dev
+    environment:
+      - DJANGO_SETTINGS_MODULE=app.settings.dev
+    depends_on:
+      - db
+      - redis
     networks:
       - dashy_network
 
@@ -41,6 +58,8 @@ services:
       - /app/node_modules
     ports:
       - "5173:5173"
+    environment:
+      - CI=true
     depends_on:
       - api
     networks:
@@ -58,8 +77,18 @@ services:
     networks:
       - dashy_network
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - dashy_network
+
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   dashy_network:

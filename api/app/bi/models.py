@@ -79,3 +79,51 @@ class IoTMeasurement(models.Model):
             models.Index(fields=["organization", "device_id", "metric", "recorded_at"]),
         ]
 
+
+class IngestionJob(models.Model):
+    """
+    Tracks the status of background data ingestion jobs.
+    """
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+    
+    SOURCE_TYPE_CHOICES = [
+        ("json", "JSON"),
+        ("csv", "CSV"),
+        ("api", "API"),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid7_like, editable=False)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="ingestion_jobs")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="ingestion_jobs")
+    
+    source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
+    file_name = models.CharField(max_length=500, blank=True, null=True)
+    file_path = models.CharField(max_length=1000, blank=True, null=True)
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    progress = models.IntegerField(default=0)  # 0-100
+    total_rows = models.IntegerField(default=0)
+    processed_rows = models.IntegerField(default=0)
+    failed_rows = models.IntegerField(default=0)
+    
+    error_message = models.TextField(blank=True, null=True)
+    logs = models.TextField(blank=True, default="")
+    
+    celery_task_id = models.CharField(max_length=255, blank=True, null=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    finished_at = models.DateTimeField(blank=True, null=True)
+    
+    class Meta:
+        ordering = ["-created_at"]
+    
+    def __str__(self):
+        return f"IngestionJob {self.id} ({self.status})"
+
+

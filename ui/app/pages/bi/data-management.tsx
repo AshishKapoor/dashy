@@ -1,20 +1,31 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Database,
-  Upload,
   RefreshCw,
   Hash,
   CalendarClock,
   Braces,
   Type,
   Loader2,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  FileText,
 } from "lucide-react";
 import {
   ColumnDef,
@@ -23,11 +34,14 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useBiIotList, useBiIotIngestCreate } from "@/client/gen/dashy/bi/bi";
-import type {
-  BiIotIngestCreateBodyOne,
-  BiIotIngestCreateBodyTwo,
-} from "@/client/gen/dashy";
+import {
+  useBiIotList,
+  useBiIngestionJobsList,
+  useBiIngestionJobsRetrieve,
+  getBiIngestionJobsListQueryKey,
+} from "@/client/gen/dashy/bi/bi";
+import type { IngestionJob } from "@/client/gen/dashy";
+import { AXIOS_INSTANCE } from "@/client/http-dashy-client";
 
 interface IoTMeasurement {
   id: number;
@@ -52,12 +66,43 @@ const typeIconFor = (key: string): ReactElement => {
   }
 };
 
+const statusBadgeVariant = (
+  status: string
+): "default" | "secondary" | "destructive" | "outline" => {
+  switch (status) {
+    case "completed":
+      return "default";
+    case "processing":
+      return "secondary";
+    case "failed":
+      return "destructive";
+    default:
+      return "outline";
+  }
+};
+
+const StatusIcon = ({ status }: { status: string }) => {
+  switch (status) {
+    case "completed":
+      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    case "processing":
+      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+    case "failed":
+      return <XCircle className="h-4 w-4 text-destructive" />;
+    default:
+      return <Clock className="h-4 w-4 text-muted-foreground" />;
+  }
+};
+
 export function DataManagementPage() {
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<IoTMeasurement[]>([]);
   const [deviceId, setDeviceId] = useState("");
   const [metric, setMetric] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const columns = useMemo<ColumnDef<IoTMeasurement>[]>(
     () => [
@@ -152,6 +197,41 @@ export function DataManagementPage() {
     }
   );
 
+  // Fetch ingestion jobs
+  const { data: jobs, refetch: refetchJobs } = useBiIngestionJobsList({
+    query: {
+      refetchInterval: activeJobId ? 2000 : false, // Poll while a job is active
+    },
+  });
+
+  // Poll active job for progress
+  const { data: activeJob } = useBiIngestionJobsRetrieve(activeJobId ?? "", {
+    query: {
+      enabled: !!activeJobId,
+      refetchInterval: 1000, // Poll every second while active
+    },
+  });
+
+  // Track when active job completes
+  useEffect(() => {
+    if (activeJob && activeJobId) {
+      if (activeJob.status === "completed") {
+        toast.success(
+          `Ingestion completed: ${activeJob.processed_rows} records created`
+        );
+        setActiveJobId(null);
+        refetch();
+        refetchJobs();
+      } else if (activeJob.status === "failed") {
+        toast.error(
+          `Ingestion failed: ${activeJob.error_message || "Unknown error"}`
+        );
+        setActiveJobId(null);
+        refetchJobs();
+      }
+    }
+  }, [activeJob, activeJobId, refetch, refetchJobs]);
+
   useEffect(() => {
     const normalized = (data ?? []).map((d) => ({
       ...d,
@@ -165,52 +245,48 @@ export function DataManagementPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId, metric]);
 
-  const ingestMutation = useBiIotIngestCreate({
-    mutation: {
-      onSuccess: async () => {
-        toast.success("File ingested successfully");
-        // Invalidate all IoT queries to refresh data regardless of filters
-        // Use the correct query key prefix from generated client
-        await queryClient.invalidateQueries({
-          queryKey: [`/api/bi/iot/`],
-        });
-        // Explicitly refetch the current view
-        await refetch();
-      },
-      onError: (error: any) => {
-        const errorMsg = error?.response?.data?.error || "Upload failed";
-        toast.error(errorMsg);
-      },
-    },
-  });
-
   const handleUpload = async (file: File | null) => {
     if (!file) return;
-    const isJson =
-      file.type === "application/json" ||
-      file.name.toLowerCase().endsWith(".json");
 
-    if (isJson) {
-      try {
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        const payload: BiIotIngestCreateBodyOne = Array.isArray(parsed)
-          ? { rows: parsed }
-          : (parsed as BiIotIngestCreateBodyOne);
-        ingestMutation.mutate({ data: payload });
-      } catch {
-        toast.error("Invalid JSON file");
+    setIsUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // Use axios directly for FormData upload to async endpoint
+      const response = await AXIOS_INSTANCE.post<IngestionJob>(
+        "/api/bi/iot/ingest/",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      const job = response.data;
+      toast.info(`Ingestion job started: ${job.file_name}`);
+      setActiveJobId(job.id);
+
+      // Refresh jobs list
+      queryClient.invalidateQueries({
+        queryKey: getBiIngestionJobsListQueryKey(),
+      });
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.error || "Upload failed";
+      toast.error(errorMsg);
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
-      return;
     }
-
-    const formData = new FormData();
-    formData.append("file", file);
-    // Cast FormData to expected union type for the generated client
-    ingestMutation.mutate({
-      data: formData as unknown as BiIotIngestCreateBodyTwo,
-    });
   };
+
+  // Recent jobs (last 5)
+  const recentJobs = jobs?.slice(0, 5) ?? [];
 
   return (
     <div className="space-y-6">
@@ -230,85 +306,139 @@ export function DataManagementPage() {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-4 w-4" /> Upload Data
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="device">Device ID (optional filter)</Label>
-              <Input
-                id="device"
-                value={deviceId}
-                onChange={(e) => setDeviceId(e.target.value)}
-                placeholder="dev-1"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="metric">Metric (optional filter)</Label>
-              <Input
-                id="metric"
-                value={metric}
-                onChange={(e) => setMetric(e.target.value)}
-                placeholder="temperature"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="file">CSV or JSON (rows) Upload</Label>
-              <div className="flex items-center gap-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Upload Card */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Database className="h-4 w-4" /> Upload Data
+            </CardTitle>
+            <CardDescription>
+              Upload CSV or JSON files. Large files are processed in the
+              background.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="device">Device ID (filter)</Label>
                 <Input
+                  id="device"
+                  value={deviceId}
+                  onChange={(e) => setDeviceId(e.target.value)}
+                  placeholder="dev-1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="metric">Metric (filter)</Label>
+                <Input
+                  id="metric"
+                  value={metric}
+                  onChange={(e) => setMetric(e.target.value)}
+                  placeholder="temperature"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="file">CSV or JSON File</Label>
+                <Input
+                  ref={fileInputRef}
                   id="file"
                   type="file"
-                  accept=".csv,application/json"
+                  accept=".csv,.json,application/json,text/csv"
                   onChange={(e) => handleUpload(e.target.files?.[0] || null)}
-                  disabled={ingestMutation.isPending}
+                  disabled={isUploading}
                 />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => refetch()}
-                  disabled={isFetching || ingestMutation.isPending}
-                >
-                  {isFetching ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="mr-2 h-4 w-4" />
-                  )}
-                  Load
-                </Button>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card>
+            {/* Active job progress */}
+            {activeJob && activeJobId && (
+              <div className="p-4 border rounded-lg bg-muted/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="font-medium">
+                      Processing: {activeJob.file_name}
+                    </span>
+                  </div>
+                  <Badge variant={statusBadgeVariant(activeJob.status)}>
+                    {activeJob.status}
+                  </Badge>
+                </div>
+                <Progress value={activeJob.progress} className="h-2" />
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span>
+                    {activeJob.processed_rows} / {activeJob.total_rows} rows
+                  </span>
+                  <span>{activeJob.progress}%</span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Jobs Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-4 w-4" /> Recent Jobs
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentJobs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No recent ingestion jobs
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {recentJobs.map((job) => (
+                  <div
+                    key={job.id}
+                    className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors"
+                  >
+                    <StatusIcon status={job.status} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {job.file_name || "Unknown file"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {job.processed_rows} rows •{" "}
+                        {job.created_at
+                          ? new Date(job.created_at).toLocaleString()
+                          : ""}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={statusBadgeVariant(job.status)}
+                      className="shrink-0"
+                    >
+                      {job.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Data Preview Card */}
+      <Card className="relative">
         <CardHeader>
           <CardTitle>Dataset Preview</CardTitle>
+          <CardDescription>
+            Showing {rows.length} records
+            {deviceId && ` for device: ${deviceId}`}
+            {metric && ` with metric: ${metric}`}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Top progress bar during upload or refetch */}
-          {(ingestMutation.isPending || isFetching) && (
-            <div className="absolute top-0 left-0 right-0 h-1">
-              <div className="h-full bg-primary/20" />
-              <div className="absolute inset-0">
-                <div className="h-full w-1/3 bg-primary/80 animate-pulse" />
-              </div>
-            </div>
-          )}
-          {/* Overlay loader during upload or refetch */}
-          {(ingestMutation.isPending || isFetching) && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+          {/* Overlay loader during refetch */}
+          {isFetching && !isLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-lg">
               <div className="flex items-center gap-2 px-4 py-2 rounded-md border bg-card">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm">
-                  {ingestMutation.isPending
-                    ? "Uploading and refreshing dataset..."
-                    : "Refreshing dataset..."}
-                </span>
+                <span className="text-sm">Refreshing dataset...</span>
               </div>
             </div>
           )}
@@ -317,6 +447,14 @@ export function DataManagementPage() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <Database className="h-12 w-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No data found</p>
+              <p className="text-sm text-muted-foreground">
+                Upload a CSV or JSON file to get started
+              </p>
             </div>
           ) : (
             <div

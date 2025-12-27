@@ -1,21 +1,27 @@
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.viewsets import ModelViewSet
-from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.parsers import JSONParser, MultiPartParser
-from django.db import connection
 import csv
 import io
-import re
+import os
+import tempfile
+import uuid
 
-from .models import Dashboard, Indicator, Workspace, IoTMeasurement
+from django.conf import settings
+from django.db import connection
+from rest_framework import status
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.parsers import JSONParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.viewsets import ModelViewSet
+
+from .models import Dashboard, Indicator, IngestionJob, IoTMeasurement, Workspace
 from .serializers import (
     DashboardSerializer,
     IndicatorSerializer,
-    WorkspaceSerializer,
+    IngestionJobSerializer,
     IoTMeasurementSerializer,
+    WorkspaceSerializer,
 )
+from .tasks import process_ingestion_job
 
 class WorkspaceViewSet(ModelViewSet):
     queryset = Workspace.objects.all()
@@ -67,36 +73,73 @@ class IoTMeasurementViewSet(ModelViewSet):
     @action(detail=False, methods=["post"], url_path="ingest")
     def ingest(self, request):
         """
-        Accepts either JSON array of measurements or CSV file upload.
+        Async ingestion endpoint - creates an IngestionJob and processes in background.
         
-        JSON body formats supported:
+        Accepts file upload (JSON or CSV) and returns immediately with job ID.
+        Poll the job status via /api/bi/ingestion-jobs/{id}/ to track progress.
         
-        1. Standard format with rows:
-        {
-          "device_id": "dev-1",
-          "metric": "temperature",
-          "rows": [
-            {"recorded_at": "2025-01-01T00:00:00Z", "value": 23.1, "tags": {"room": "A"}},
-            ...
-          ]
-        }
-        
-        2. OpenAQ-style array format (air-quality samples):
-        [
-          {
-            "location": "Coyhaique",
-            "parameter": "pm25",
-            "date": {"utc": "2028-07-01T22:00:00.000Z"},
-            "value": 1,
-            "unit": "µg/m³",
-            "coordinates": {"latitude": -45.57, "longitude": -72.06},
-            "country": "CL",
-            "city": "Coyhaique"
-          },
-          ...
-        ]
-
         CSV upload expects columns: device_id, metric, recorded_at, value, tags(optional JSON)
+        Flexible column mapping supports common variations like: location, parameter, timestamp, etc.
+        
+        JSON formats supported:
+        1. Array of objects (OpenAQ-style)
+        2. Object with rows array
+        """
+        org = request.user.organization
+        if not org:
+            return Response(
+                {"error": "User must be associated with an organization"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if "file" not in request.FILES:
+            return Response(
+                {"error": "No file provided. Use multipart/form-data with 'file' field."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        file = request.FILES["file"]
+        file_name = file.name
+        
+        # Determine source type
+        is_json = file_name.lower().endswith('.json') or file.content_type == 'application/json'
+        source_type = "json" if is_json else "csv"
+        
+        # Save file to temp location
+        upload_dir = os.path.join(settings.MEDIA_ROOT, "uploads", str(org.id))
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        file_id = str(uuid.uuid4())
+        file_extension = ".json" if is_json else ".csv"
+        temp_path = os.path.join(upload_dir, f"{file_id}{file_extension}")
+        
+        with open(temp_path, "wb") as dest:
+            for chunk in file.chunks():
+                dest.write(chunk)
+        
+        # Create ingestion job
+        job = IngestionJob.objects.create(
+            organization=org,
+            created_by=request.user,
+            source_type=source_type,
+            file_name=file_name,
+            file_path=temp_path,
+            status="pending",
+        )
+        
+        # Queue the task
+        process_ingestion_job.delay(str(job.id))
+        
+        serializer = IngestionJobSerializer(job)
+        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=False, methods=["post"], url_path="ingest-sync")
+    def ingest_sync(self, request):
+        """
+        Synchronous ingestion for small datasets (backward compatible).
+        
+        Accepts either JSON body or file upload.
+        Use /ingest/ for large files - they will be processed in background.
         """
         org = request.user.organization
         if not org:
@@ -149,6 +192,8 @@ class IoTMeasurementViewSet(ModelViewSet):
                     created = len(rows)
         else:
             created = self._ingest_json_data(request.data, org)
+
+        return Response({"created": created}, status=status.HTTP_201_CREATED)
 
         return Response({"created": created}, status=status.HTTP_201_CREATED)
 
@@ -232,6 +277,22 @@ class IoTMeasurementViewSet(ModelViewSet):
             return json.loads(raw)
         except Exception:
             return {}
+
+
+class IngestionJobViewSet(ModelViewSet):
+    """
+    ViewSet for managing ingestion jobs.
+    Users can view their organization's ingestion jobs and track progress.
+    """
+    queryset = IngestionJob.objects.all()
+    serializer_class = IngestionJobSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]  # Read-only
+
+    def get_queryset(self):
+        return IngestionJob.objects.filter(
+            organization=self.request.user.organization
+        ).order_by("-created_at")
 
 
 @api_view(["POST"])

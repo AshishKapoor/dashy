@@ -6,6 +6,7 @@ from .views import (
     IndicatorViewSet,
     WorkspaceViewSet,
     IoTMeasurementViewSet,
+    IngestionJobViewSet,
     execute_sql_query,
     get_table_schema,
 )
@@ -16,6 +17,7 @@ router.register("workspaces", WorkspaceViewSet)
 router.register("dashboards", DashboardViewSet)
 router.register("indicators", IndicatorViewSet)
 router.register("iot", IoTMeasurementViewSet)
+router.register("ingestion-jobs", IngestionJobViewSet)
 
 urlpatterns = [
     path("", include(router.urls)),
