@@ -2,6 +2,9 @@
 
 Dashy is a Django 5 + React 19 stack for organization-scoped BI with JWT auth, IoT time-series ingestion (TimescaleDB), and a Vite-powered UI that uses a generated OpenAPI client.
 
+<img width="1912" height="1241" alt="Screenshot 2025-12-27 at 10 01 00 PM" src="https://github.com/user-attachments/assets/344dbb91-6a49-4bec-a361-141533357a19" />
+
+
 ## Project layout
 
 - Backend: Django API in [api/app](api/app) with apps `accounts` and `bi`; settings load `.env.dev` by default in [api/app/settings/base.py](api/app/settings/base.py).
